@@ -1,0 +1,14 @@
+Manifest.toml
+*.cov
+*.jl.cov
+*.ji
+*.so
+*.dylib
+*.dll
+
+# Demo output
+limiter_*.pdf
+limiter_*.png
+examples/limiter_*.pdf
+examples/limiter_*.png
+examples/reconstruction_plots/

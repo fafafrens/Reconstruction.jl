@@ -1,0 +1,13 @@
+name = "Reconstruction"
+uuid = "c24eea4e-785e-427a-9aad-686a6394e097"
+authors = ["Eduardo Grossi"]
+version = "0.1.0"
+
+[deps]
+MuladdMacro = "46d2c3a1-f734-5fdb-9937-b9b9aeba4221"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
