@@ -1,5 +1,7 @@
 # Reconstruction.jl
 
+[![CI](https://github.com/fafafrens/Reconstruction.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/fafafrens/Reconstruction.jl/actions/workflows/ci.yml)
+
 Finite-volume reconstruction and slope-limiter routines for face states.
 
 The package uses small reconstruction objects instead of a large family of
