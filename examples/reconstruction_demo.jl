@@ -134,7 +134,7 @@ function maybe_make_plots(; n=256, outdir=joinpath(@__DIR__, "reconstruction_plo
             Plots.plot!(p, xface, left; label=reconstruction_label(recon), linewidth=1.5)
         end
 
-        path = joinpath(outdir, "$(case.name)_left_states.png")
+        path = joinpath(outdir, "$(case.name)_left_states.pdf")
         Plots.savefig(p, path)
         push!(written, path)
     end
