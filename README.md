@@ -46,15 +46,7 @@ The current convention is:
 ```julia
 left_state, right_state = face(WENO3(), u_im1, u_i, u_ip1, u_ip2)
 
-left_state, right_state = face(
-    WENOZ(),
-    u_im2,
-    u_im1,
-    u_i,
-    u_ip1,
-    u_ip2,
-    u_ip3,
-)
+left_state, right_state = face(WENOZ(),u_im2,u_im1,u_i,u_ip1,u_ip2,u_ip3)
 ```
 
 Tuple and vector stencils are also accepted:
