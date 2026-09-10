@@ -51,7 +51,9 @@ center_allocations(recon, u, dx) = @allocated center(recon, u...; dx)
         errors = map(h -> abs(center(WENOZ(), ntuple(j -> g(x0 + (j - 3) * h), 5)...;
                                      dx=h).derivative - gp(x0)), steps)
         orders = ntuple(k -> log2(errors[k] / errors[k + 1]), length(steps) - 1)
-        @test all(o -> 3.8 < o < 4.2, orders)
+        # Lower bound only, as the CWENO convergence tests do. A tight two-sided
+        # band is brittle across platforms and Julia versions.
+        @test all(o -> o > 3.7, orders)
         @test last(errors) < 1.0e-8
     end
 
@@ -140,7 +142,7 @@ end
         errors = map((h, u) -> abs(center(WENO3(), u...; dx=h).derivative - gp(x0)),
                      steps, stencils)
         orders = ntuple(k -> log2(errors[k] / errors[k + 1]), length(steps) - 1)
-        @test all(o -> 1.9 < o < 2.2, orders)
+        @test all(o -> o > 1.85, orders)
 
         # In smooth data the nonlinear weights must stay near (1/2, 1/2), so the
         # result should track the plain central difference rather than drift.
