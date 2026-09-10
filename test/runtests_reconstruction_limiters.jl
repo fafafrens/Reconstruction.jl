@@ -173,3 +173,4 @@ end
 end
 
 include(joinpath(@__DIR__, "runtests_cell_polynomials.jl"))
+include(joinpath(@__DIR__, "runtests_wenoz_center.jl"))
