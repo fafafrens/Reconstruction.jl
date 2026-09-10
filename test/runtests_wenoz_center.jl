@@ -1,5 +1,10 @@
 # Included by runtests_reconstruction_limiters.jl.
 
+# Measured through a top-level wrapper, as the CWENO allocation tests do. An
+# inline @allocated over a splat inside a testset loop boxes on Julia 1.11 and
+# reports phantom allocations.
+center_allocations(recon, u, dx) = @allocated center(recon, u...; dx)
+
 @testset "WENO-Z centre gradient" begin
     # --- the linear weights, derived exactly rather than trusted --------------
     # Each substencil quadratic contributes its dp/dξ at ξ = 0 as an exact
@@ -78,13 +83,13 @@
     end
 
     u32 = map(Float32, u)
-    c32 = center(WENOZ(), u32...; dx=0.1f0)
+    c32 = @inferred center(WENOZ(), u32...; dx=0.1f0)
     @test c32.value isa Float32
     @test c32.derivative isa Float32                  # rationals keep Float32
 
     for (v, w) in ((u, 0.1), (u32, 0.1f0))
-        center(WENOZ(), v...; dx=w)
-        @test @allocated(center(WENOZ(), v...; dx=w)) == 0
+        center_allocations(WENOZ(), v, w)                 # Warm the measurement wrapper.
+        @test center_allocations(WENOZ(), v, w) == 0
     end
 
     # Mirroring the stencil must flip the sign of the gradient.
@@ -162,13 +167,13 @@ end
     end
 
     u32 = map(Float32, u)
-    c32 = center(WENO3(), u32...; dx=0.1f0)
+    c32 = @inferred center(WENO3(), u32...; dx=0.1f0)
     @test c32.value isa Float32
     @test c32.derivative isa Float32
 
     for (v, w) in ((u, 0.1), (u32, 0.1f0))
-        center(WENO3(), v...; dx=w)
-        @test @allocated(center(WENO3(), v...; dx=w)) == 0
+        center_allocations(WENO3(), v, w)                 # Warm the measurement wrapper.
+        @test center_allocations(WENO3(), v, w) == 0
     end
 
     @test center(WENO3(), reverse(u)...; dx=0.1).derivative ≈
