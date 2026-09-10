@@ -1,6 +1,7 @@
 module Reconstruction
 
 using MuladdMacro
+using LinearAlgebra
 
 export AbstractReconstruction,
        AbstractSlopeLimiter,
@@ -8,6 +9,17 @@ export AbstractReconstruction,
        PiecewiseConstant,
        WENO3,
        WENOZ,
+       CWENO3,
+       CWENO5,
+       JSWeights,
+       ZWeights,
+       PointValues,
+       CellAverages,
+       CellPolynomial,
+       cell_polynomial,
+       value,
+       derivative,
+       center,
        MP5,
        MinmodLimiter,
        GeneralizedMinmodLimiter,
@@ -55,7 +67,7 @@ const PiecewiseConstant = Godunov
 """
     WENO3()
 
-Third-order WENO reconstruction.
+Third-order WENO interpolation of point values on a uniform grid.
 Has halo width `H = 2` and uses a 4-point face stencil `(u_{i-1}, u_i, u_{i+1}, u_{i+2})`.
 """
 struct WENO3 <: AbstractReconstruction{2,4} end
@@ -63,7 +75,7 @@ struct WENO3 <: AbstractReconstruction{2,4} end
 """
     WENOZ()
 
-Fifth-order WENO-Z reconstruction.
+Fifth-order WENO-Z interpolation of point values on a uniform grid.
 Has halo width `H = 3` and uses a 6-point face stencil `(u_{i-2}, ..., u_{i+3})`.
 """
 struct WENOZ <: AbstractReconstruction{3,6} end
@@ -71,7 +83,8 @@ struct WENOZ <: AbstractReconstruction{3,6} end
 """
     MP5(; alpha=4.0, tolerance=0.0)
 
-Fifth-order monotonicity-preserving reconstruction.
+Fifth-order monotonicity-preserving reconstruction from cell averages on a
+uniform grid (also usable as a numerical-flux reconstruction in finite differences).
 Has halo width `H = 3` and uses a 6-point face stencil `(u_{i-2}, ..., u_{i+3})`.
 """
 struct MP5{A,T} <: AbstractReconstruction{3,6}
@@ -239,6 +252,8 @@ end
     return u + 0.5 * slope(lim, u_m, u, u_p)
 end
 
+include("CellPolynomials.jl")
+
 # ---------------------------------------------------------------------------
 # WENO3
 # ---------------------------------------------------------------------------
@@ -291,7 +306,7 @@ end
 
     α1 = 1 // 16 * (1 + τ5 * inv(β1 + tiny))
     α2 = 5 // 8  * (1 + τ5 * inv(β2 + tiny))
-    α3 = 1 // 16 * (1 + τ5 * inv(β3 + tiny))
+    α3 = 5 // 16 * (1 + τ5 * inv(β3 + tiny))
 
     invtot = inv(α1 + α2 + α3)
     return (α1 * v1 + α2 * v2 + α3 * v3) * invtot

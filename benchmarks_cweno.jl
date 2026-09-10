@@ -1,0 +1,100 @@
+# Run: julia --project=. benchmarks_cweno.jl [earlier-source-directory]
+# The optional source directory allows comparison with an earlier checkout.
+if isempty(ARGS)
+    using Reconstruction
+else
+    source = only(ARGS)
+    entry = isfile(joinpath(source, "src", "Reconstruction.jl")) ?
+        joinpath(source, "src", "Reconstruction.jl") : joinpath(source, "Reconstruction.jl")
+    include(entry)
+    if isdefined(Main, :ReconstructionLimiters)
+        using .ReconstructionLimiters
+    else
+        using .Reconstruction
+    end
+end
+using Statistics
+using Printf
+
+# Keep repeated sweeps separate while allowing vectorization within each sweep.
+@noinline function direct_faces!(l, r, recon, u)
+    @inbounds for i in eachindex(l)
+        stencil = ntuple(k -> u[i + k - 1], Val(6))
+        l[i], r[i] = face(recon, stencil...)
+    end
+    return nothing
+end
+
+@noinline function reuse_faces!(l, r, polynomials, recon, u)
+    @inbounds for i in eachindex(l)
+        stencil = ntuple(k -> u[i + k - 1], Val(5))
+        polynomials[i] = cell_polynomial(recon, stencil...)
+    end
+    @inbounds for i in eachindex(l)
+        j = i == length(l) ? firstindex(l) : i + 1
+        l[i], r[i] = face(polynomials[i], polynomials[j])
+    end
+    return nothing
+end
+
+# Separate coefficient arrays permit vectorization across neighboring cells.
+# CellPolynomial remains the scalar interface; no new representation is needed
+# inside the numerical reconstruction itself.
+@noinline function reuse_coefficients!(l, r, coefficients, recon, u)
+    @inbounds for i in eachindex(l)
+        p = cell_polynomial(recon, ntuple(k -> u[i + k - 1], Val(5)))
+        ntuple(k -> coefficients[k][i] = p.coefficients[k], Val(5))
+    end
+    @inbounds for i in eachindex(l)
+        j = i == length(l) ? firstindex(l) : i + 1
+        p = CellPolynomial(ntuple(k -> coefficients[k][i], Val(5)))
+        q = CellPolynomial(ntuple(k -> coefficients[k][j], Val(5)))
+        l[i], r[i] = face(p, q)
+    end
+    return nothing
+end
+
+function measure_sweep(f; repetitions=30, samples=9)
+    f() # Compilation and all output allocation are excluded from timing.
+    times = map(1:samples) do _
+        (@elapsed for _ in 1:repetitions
+            f()
+        end) / repetitions
+    end
+    return (microseconds=1e6 * median(times), bytes=@allocated(f()))
+end
+
+function benchmark_cweno(; N=4096)
+    @printf("%d periodic Float64 cells; median microseconds per complete face sweep\n", N)
+    @printf("%-22s %12s %12s %12s %12s\n", "Profile / method", "WENO-Z", "CWENO-Z", "Reuse AoS", "Reuse SoA")
+    for discontinuous in (false, true)
+        u = [sin(2π * (i - 3) / N) + 0.2cos(6π * (i - 3) / N) +
+            (discontinuous && 0.3 <= mod(i - 3, N) / N < 0.7 ? 1.0 : 0.0) for i in 1:(N + 5)]
+        u[(N + 1):(N + 5)] .= u[1:5]
+        for power in (1, 2)
+            recon = CWENO5(; input=PointValues(), weights=ZWeights(; power))
+            l, r = zeros(N), zeros(N)
+            polynomials = Vector{typeof(cell_polynomial(recon, u[1:5]))}(undef, N)
+            coefficients = ntuple(_ -> zeros(N), Val(5))
+            direct_faces!(l, r, recon, u)
+            expected_l, expected_r = copy(l), copy(r)
+            reuse_faces!(l, r, polynomials, recon, u)
+            @assert isapprox(l, expected_l) && isapprox(r, expected_r)
+            reuse_coefficients!(l, r, coefficients, recon, u)
+            @assert isapprox(l, expected_l) && isapprox(r, expected_r)
+            wz = WENOZ()
+            weno = measure_sweep(() -> direct_faces!(l, r, wz, u))
+            direct = measure_sweep(() -> direct_faces!(l, r, recon, u))
+            reuse = measure_sweep(() -> reuse_faces!(l, r, polynomials, recon, u))
+            soa = measure_sweep(() -> reuse_coefficients!(l, r, coefficients, recon, u))
+            @assert weno.bytes == direct.bytes == reuse.bytes == soa.bytes == 0
+            label = string(discontinuous ? "mixed" : "smooth", ", power=", power)
+            @printf("%-22s %12.2f %12.2f %12.2f %12.2f\n", label,
+                weno.microseconds, direct.microseconds, reuse.microseconds, soa.microseconds)
+        end
+    end
+end
+
+if abspath(PROGRAM_FILE) == @__FILE__
+    benchmark_cweno()
+end
