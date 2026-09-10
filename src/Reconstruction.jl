@@ -259,16 +259,22 @@ include("CellPolynomials.jl")
 # ---------------------------------------------------------------------------
 
 
+# One-sided increments and their smoothness indicators, shared by the face
+# reconstruction and the cell-centre gradient.
+@muladd @inline function _weno3_indicators(u_m, u, u_p)
+    Δm = u - u_m
+    Δp = u_p - u
+    β0 = Δm * Δm
+    β1 = Δp * Δp
+    τ = (Δp - Δm) * (Δp - Δm)
+    return Δm, Δp, β0, β1, τ
+end
+
 @muladd function left(::WENO3, u_m, u, u_p)
     p0 = -0.5 * u_m + 1.5 * u
     p1 =  0.5 * u   + 0.5 * u_p
 
-    Δm = u - u_m
-    Δp = u_p - u
-
-    β0 = Δm * Δm
-    β1 = Δp * Δp
-    τ = (Δp - Δm) * (Δp - Δm)
+    Δm, Δp, β0, β1, τ = _weno3_indicators(u_m, u, u_p)
 
     tiny = _tiny(u)
 
@@ -279,6 +285,52 @@ include("CellPolynomials.jl")
 
     invtot = inv(α0 + α1)
     return (α0 * p0 + α1 * p1) * invtot
+end
+
+
+"""
+    center(::WENO3, u_m, u, u_p; dx)
+
+WENO3 limited reconstruction at the centre of cell `i`, from point values on a
+uniform grid. Returns the named tuple `(value=uc, derivative=dudx)`.
+
+`uc` is exactly the central sample, for the same reason as in the WENO-Z case:
+both candidate lines pass through node `i`, so any convex blend of them returns
+`u` at `ξ = 0`. The derivative carries all of the reconstruction content.
+
+The candidates are the one-sided increments `Δm` and `Δp`, which are the
+derivatives at `ξ = 0` of the lines through nodes (-1,0) and (0,1). The
+indicators and `τ` are shared with `left`. The linear weights are `(1/2, 1/2)`,
+optimal for the centre derivative, against `left`'s `(1/4, 3/4)`, which is
+optimal at `ξ = 1/2`. Both are positive.
+
+The derivative targets second order where the data is smooth, and collapses onto
+the smoother one-sided increment at a discontinuity. `dx` must be finite and
+positive. As with WENO-Z, no `cell_polynomial` is exposed.
+"""
+@muladd function center(::WENO3, u_m::Number, u::Number, u_p::Number; dx::Real)
+    isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
+
+    Δm, Δp, β0, β1, τ = _weno3_indicators(u_m, u, u_p)
+
+    tiny = _tiny(u)
+
+    # Linear weights optimal for the centre derivative, not for the face value.
+    α0 = 1 // 2 * (1 + τ * inv(β0 + tiny))
+    α1 = 1 // 2 * (1 + τ * inv(β1 + tiny))
+
+    invtot = inv(α0 + α1)
+    dudξ = (α0 * Δm + α1 * Δp) * invtot
+    return (value=u + zero(dudξ), derivative=dudξ / dx)
+end
+
+@inline center(recon::WENO3, stencil::NTuple{3,<:Number}; dx::Real) =
+    center(recon, stencil...; dx)
+
+@inline function center(recon::WENO3, stencil::AbstractVector{<:Number}; dx::Real)
+    length(stencil) == 3 || throw(DimensionMismatch("expected 3 centered stencil samples"))
+    vals = ntuple(j -> stencil[firstindex(stencil) + j - 1], Val(3))
+    return center(recon, vals...; dx)
 end
 
 # ---------------------------------------------------------------------------

@@ -92,3 +92,85 @@
     @test center(WENOZ(), rev...; dx=0.1).derivative ≈
         -center(WENOZ(), u...; dx=0.1).derivative rtol = 1.0e-14
 end
+
+@testset "WENO3 centre gradient" begin
+    # --- the linear weights, derived exactly rather than trusted --------------
+    # The candidate lines through nodes (-1,0) and (0,1) contribute their
+    # dp/dξ at ξ = 0, which are the one-sided increments.
+    gL = (-1 // 1, 1 // 1, 0 // 1)
+    gR = (0 // 1, -1 // 1, 1 // 1)
+    target = (-1 // 2, 0 // 1, 1 // 2)     # second-order central difference
+
+    d = (1 // 2, 1 // 2)
+    @test sum(d) == 1
+    @test all(w > 0 for w in d)
+    @test ntuple(k -> d[1] * gL[k] + d[2] * gR[k], 3) == target
+
+    face_d = (1 // 4, 3 // 4)              # optimal at ξ = 1/2, not at ξ = 0
+    @test sum(face_d) == 1
+    @test ntuple(k -> face_d[1] * gL[k] + face_d[2] * gR[k], 3) != target
+
+    # --- exactness on polynomials the method must reproduce -------------------
+    for dx in (0.25, 1.0, 2.5)
+        @test center(WENO3(), 3.5, 3.5, 3.5; dx).value == 3.5
+        @test center(WENO3(), 3.5, 3.5, 3.5; dx).derivative == 0.0
+
+        slope0 = -1.75
+        v = ntuple(j -> 2.0 + slope0 * (j - 2) * dx, 3)
+        @test center(WENO3(), v...; dx).derivative ≈ slope0 rtol = 1.0e-13
+    end
+
+    for u in ((0.0, 0.0, 9.0), (1.0, -2.0, 0.75))
+        @test center(WENO3(), u...; dx=0.1).value == u[2]
+    end
+
+    # --- second-order convergence at generic smooth points --------------------
+    f(x) = sin(x) + 0.3cos(3x)
+    fp(x) = cos(x) - 0.9sin(3x)
+    # Coarse steps are still pre-asymptotic here, measuring about 2.34, so start
+    # where the rate has settled.
+    steps = (0.025, 0.0125, 0.00625, 0.003125)
+    for (g, gp, x0) in ((f, fp, 0.0), (sin, cos, 1.0))
+        stencils = map(h -> ntuple(j -> g(x0 + (j - 2) * h), 3), steps)
+        errors = map((h, u) -> abs(center(WENO3(), u...; dx=h).derivative - gp(x0)),
+                     steps, stencils)
+        orders = ntuple(k -> log2(errors[k] / errors[k + 1]), length(steps) - 1)
+        @test all(o -> 1.9 < o < 2.2, orders)
+
+        # In smooth data the nonlinear weights must stay near (1/2, 1/2), so the
+        # result should track the plain central difference rather than drift.
+        for (h, u) in zip(steps, stencils)
+            linear = (u[3] - u[1]) / (2h)
+            @test center(WENO3(), u...; dx=h).derivative ≈ linear rtol = 1.0e-3
+        end
+    end
+
+    # --- shocks stay finite and within the data's own slope range -------------
+    c = center(WENO3(), 0.0, 0.0, 1.0; dx=0.1)
+    @test isfinite(c.derivative)
+    @test 0.0 <= c.derivative <= 10.0
+    # The blend leans toward the flat side rather than the jump.
+    @test c.derivative < 0.5 * (1.0 - 0.0) / 0.1
+
+    # --- interface parity, argument validation, types, allocations ------------
+    u = (0.4, 0.5, 0.8)
+    @test center(WENO3(), u; dx=0.1) == center(WENO3(), u...; dx=0.1)
+    @test center(WENO3(), collect(u); dx=0.1) == center(WENO3(), u...; dx=0.1)
+    @test_throws DimensionMismatch center(WENO3(), [1.0, 2.0]; dx=0.1)
+    for bad in (0.0, -1.0, Inf, NaN)
+        @test_throws ArgumentError center(WENO3(), u...; dx=bad)
+    end
+
+    u32 = map(Float32, u)
+    c32 = center(WENO3(), u32...; dx=0.1f0)
+    @test c32.value isa Float32
+    @test c32.derivative isa Float32
+
+    for (v, w) in ((u, 0.1), (u32, 0.1f0))
+        center(WENO3(), v...; dx=w)
+        @test @allocated(center(WENO3(), v...; dx=w)) == 0
+    end
+
+    @test center(WENO3(), reverse(u)...; dx=0.1).derivative ≈
+        -center(WENO3(), u...; dx=0.1).derivative rtol = 1.0e-14
+end

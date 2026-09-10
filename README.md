@@ -96,9 +96,56 @@ uc, dudx = center(p1; dx=0.1)
 ```
 
 The linear coefficient is the existing limited `slope`, an increment across
-one cell. Dividing it by `dx` gives the physical derivative. Existing WENO3,
-WENOZ, and MP5 retain their face interfaces; they do not expose a cell polynomial
-or a center reconstruction.
+one cell. Dividing it by `dx` gives the physical derivative. WENO3, WENOZ, and
+MP5 retain their face interfaces and expose no cell polynomial. WENO3 and WENOZ
+do provide a `center` reconstruction, described below; MP5 provides neither.
+
+## WENO centre gradients
+
+WENO3 and WENOZ accept `center(recon, stencil...; dx)`, returning the same
+`(value=uc, derivative=dudx)` named tuple as the polynomial reconstructions.
+The stencil is the centred one, three samples for WENO3 and five for WENOZ.
+
+```julia
+uc, dudx = center(WENOZ(), 0.2, 0.4, 0.5, 0.8, 0.9; dx=0.1)
+uc, dudx = center(WENO3(), 0.4, 0.5, 0.8; dx=0.1)
+```
+
+`uc` is exactly the central sample. Every WENO substencil contains node `i`, so
+each candidate interpolates `u` at `ξ = 0` and any convex blend returns it
+whatever the nonlinear weights do. All of the reconstruction content is in the
+derivative.
+
+The candidates are the derivatives at `ξ = 0` of the same substencil polynomials
+the face reconstruction blends, and the smoothness indicators and `τ` are shared
+with it. Only the linear weights differ, because the face weights are optimal at
+`ξ = 1/2` rather than at the centre:
+
+| Reconstruction | Face weights | Centre-derivative weights | Derivative order |
+| --- | --- | --- | --- |
+| WENO3 | `(1/4, 3/4)` | `(1/2, 1/2)` | 2 |
+| WENOZ | `(1/16, 10/16, 5/16)` | `(1/6, 2/3, 1/6)` | 4 |
+
+Reusing the face weights at the centre drops WENOZ's derivative from fourth
+order to second, so the two sets are not interchangeable. All weights are
+positive, so no negative-weight splitting is needed. The tests derive them in
+exact rational arithmetic against the corresponding central differences.
+
+Orders are measured at generic smooth points. Near a critical point the
+indicators collapse toward zero, `τ/β` stops being small, and the nonlinear
+weights drift off the linear ones; the WENOZ derivative then converges
+erratically from step to step while still falling monotonically. WENO-Z makes
+the same trade at faces. At a discontinuity the blend leans toward the smoother
+substencil, and the result is a derivative of the reconstruction rather than a
+classical derivative of the data.
+
+Neither reconstruction exposes a `cell_polynomial`, and this is deliberate. The
+face and centre operators use different linear weights, so no single polynomial
+reproduces both. Evaluating such a polynomial at `ξ = 1/2` would disagree with
+`left`. Use `CWENO3` or `CWENO5` when a genuine per-cell polynomial is needed,
+which is the problem CWENO exists to solve. MP5 gets no `center` at all: its
+limiter clips a face value against bounds built from the neighbouring cell
+across that face, and has no meaning away from it.
 
 ## CWENO construction and accuracy
 
@@ -237,7 +284,9 @@ julia --project=. examples/test_and_plot_reconstruction_limiters.jl
 
 The main suite includes fitting constraints, conservation, point interpolation,
 reflection symmetry, stencil interfaces, discontinuities, convergence, numeric
-types, and allocation checks. An additional 480 randomized comparisons check
+types, and allocation checks. The WENO centre gradients add exact rational
+derivations of their linear weights, convergence at generic and near-critical
+points, and Float32 and zero-allocation checks. An additional 480 randomized comparisons check
 the optimized kernels against the dense matrix definition for both orders,
 input conventions, weight strategies, and Float32/Float64. Plotting additionally
 needs `Plots`; when it is
