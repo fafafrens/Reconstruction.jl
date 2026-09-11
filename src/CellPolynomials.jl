@@ -288,8 +288,10 @@ end
     # Divide all α by (scale/smallest)^P. All ratios are <= 1, even when
     # τ/(β+epsilon) would overflow. τ=0 recovers the linear weights.
     base = _weight_power(weights, smallest / scale)
-    correction = τ / scale
-    α = ntuple(k -> d[k] * (base + _weight_power(weights, correction * (smallest / denominators[k]))), Val(N))
+    # τ*smallest/scale equals min(τ, smallest). This removes a division and
+    # the per-candidate products, while preserving the bounded-ratio scaling.
+    scaled_tau = min(τ, smallest)
+    α = ntuple(k -> d[k] * (base + _weight_power(weights, scaled_tau / denominators[k])), Val(N))
     invtotal = inv(sum(α))
     return map(a -> a * invtotal, α)
 end

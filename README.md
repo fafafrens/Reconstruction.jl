@@ -254,26 +254,61 @@ julia --project=. benchmarks_cweno.jl /path/to/earlier/source
 For 4096 periodic Float64 point samples on Apple aarch64 with Julia 1.12.6,
 median times for the smooth profile were:
 
-| Method | Before optimization | After optimization |
-| --- | ---: | ---: |
-| WENOZ, face sweep | 91 µs | 90 µs |
-| CWENO5, ZWeights(power=2), face sweep | 1124 µs | 99 µs |
-| CWENO5, ZWeights(power=2), cached polynomial sweep | 583 µs | 333 µs |
+| Method | Relative cost |
+| --- | ---: |
+| WENOZ, face sweep | 1.0 |
+| CWENO5, ZWeights(power=2), face sweep | 3.0 |
+| CWENO5, ZWeights(power=2), cached polynomial sweep | 3.2 |
 
-The cached sweep includes both polynomial construction and face evaluation.
-Its timing is particularly sensitive to compilation context: the standalone
-module measured 102 µs, while the package import measured 333 µs. Direct faces
-measured about 99 µs in both; separate coefficient arrays measured about 110 µs.
-All measured sweeps allocate zero bytes after compilation; construction and
-output allocation are excluded. A profile containing jumps gives similar
-timings. These are local measurements, not a guarantee for other machines or
-input types. WENOZ and CWENO-Z use different reconstruction formulas.
+Costs are given relative to the WENOZ face sweep in the same process, because
+absolute times on a laptop move by a factor of two with thermal and turbo state.
+One run measured 18 µs, 55 µs, and 57 µs for the three rows. The cached sweep
+includes both polynomial construction and face evaluation. Separate coefficient
+arrays cost about 1.1 times the cached sweep. All measured sweeps allocate zero
+bytes after compilation; construction and output allocation are excluded. A
+profile containing jumps gives similar timings. These are local measurements,
+not a guarantee for other machines or input types. WENOZ and CWENO-Z use
+different reconstruction formulas.
+
+`left` and `center` for WENO3 and WENOZ carry `@inline`. Without it Julia emits
+them as out-of-line calls, which blocks vectorization of the surrounding sweep
+and costs a factor of about 2.7 on both face and centre sweeps. MP5 now inlines
+only its small acceptance path and keeps the full limiter out of line; inlining
+the entire limiter measured slower on smooth data. Inlining changes how the
+fused multiply-adds contract, so face values
+move by up to about three machine epsilon relative to the stencil magnitude.
 
 Reuse a local polynomial when requesting faces, centers, derivatives, or
 multiple interior values from the same cell. Storing every polynomial in an
 array is not necessarily faster for a face-only sweep: compiler vectorization
 and memory traffic also matter. The benchmark compares direct faces, an array
 of polynomials, and separate coefficient arrays.
+
+For comparisons that include MP5 and both CWENO input conventions, run:
+
+```sh
+julia --project=. benchmarks_faces.jl
+julia --project=. benchmarks_faces.jl /path/to/earlier/source
+```
+
+This benchmark uses identical source-loading paths, constructs reconstruction
+objects outside the loops, and measures smooth, mixed, and random rough data.
+MP5 receives cell averages; WENO-Z receives point values. The reported face
+sweep produces both states at every shared face.
+
+CWENO-Z normalization uses `min(τ, m)` in place of `τ*m/max(τ, m)`, where
+`m = minimum(β + epsilon)`. This removes one division and the per-candidate
+products while retaining bounded ratios for extreme data scales. MP5 accepts
+already admissible candidates before computing a norm, omits the norm entirely
+when tolerance is zero, and keeps the full limiter in a separate function.
+Its internal curvature limiter uses extrema to detect a common sign.
+
+These optimizations reduce CWENO-Z normalization work and accelerate MP5's
+smooth and limited paths. Compare both versions using this benchmark: older
+measurements taken before WENO's explicit inlining substantially overstate its
+cost, so their near-parity with CWENO-Z does not apply to the current methods.
+These compare runtime with each method's existing input convention and defaults,
+not identical error levels.
 
 ## Validation and plots
 
@@ -291,6 +326,11 @@ the optimized kernels against the dense matrix definition for both orders,
 input conventions, weight strategies, and Float32/Float64. Plotting additionally
 needs `Plots`; when it is
 unavailable, the plotting script still runs its smoke tests and skips figures.
+Additional regression checks compare MP5 with its original limiter on smooth,
+discontinuous, and random stencils, including nonzero tolerance and Float32/64.
+CWENO normalization is also compared with a BigFloat reference across extreme
+scales. Allocation-free MP5 sweeps are checked for Float64; its existing mixed
+Float32/Float64 branch arithmetic remains unchanged.
 
 Diagnostics use exact cell averages for Godunov, slope limiters, MP5, and
 cell-average CWENO3/CWENO5, and point samples for WENO3, WENOZ, and point-value

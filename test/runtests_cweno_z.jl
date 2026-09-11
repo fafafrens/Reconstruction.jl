@@ -84,6 +84,26 @@ end
     end
 end
 
+@testset "CWENO-Z bounded normalization across scales" begin
+    for T in (Float32, Float64), power in (1, 2)
+        d = (T(0.5), T(1 / 6), T(1 / 6), T(1 / 6))
+        weights = ZWeights(; power)
+        for epsilon in (nextfloat(zero(T)), eps(T), one(T)),
+            tau in (zero(T), epsilon / 2, epsilon, 2epsilon, floatmax(T) / 4)
+            beta = (zero(T), eps(T), one(T), floatmax(T) / 4)
+            actual = RL._z_normalized_weights(weights, beta, tau, epsilon, d)
+            alpha = map(d, beta) do dk, b
+                BigFloat(dk) * (1 + (BigFloat(tau) / (BigFloat(b) + BigFloat(epsilon)))^power)
+            end
+            expected = map(a -> T(a / sum(alpha)), alpha)
+            @test all(isfinite, actual)
+            @test all(x -> x >= 0, actual)
+            @test sum(actual) ≈ one(T)
+            @test collect(actual) ≈ collect(expected) rtol=16eps(T) atol=16eps(T)
+        end
+    end
+end
+
 @testset "CWENO-Z higher critical points" begin
     for weights in (ZWeights(), ZWeights(; power=1)), input in (PointValues(), CellAverages()),
         critical in (2, 3)

@@ -270,7 +270,7 @@ include("CellPolynomials.jl")
     return Δm, Δp, β0, β1, τ
 end
 
-@muladd function left(::WENO3, u_m, u, u_p)
+@muladd @inline function left(::WENO3, u_m, u, u_p)
     p0 = -0.5 * u_m + 1.5 * u
     p1 =  0.5 * u   + 0.5 * u_p
 
@@ -308,7 +308,7 @@ The derivative targets second order where the data is smooth, and collapses onto
 the smoother one-sided increment at a discontinuity. `dx` must be finite and
 positive. As with WENO-Z, no `cell_polynomial` is exposed.
 """
-@muladd function center(::WENO3, u_m::Number, u::Number, u_p::Number; dx::Real)
+@muladd @inline function center(::WENO3, u_m::Number, u::Number, u_p::Number; dx::Real)
     isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
 
     Δm, Δp, β0, β1, τ = _weno3_indicators(u_m, u, u_p)
@@ -354,7 +354,7 @@ end
     return β1, β2, β3
 end
 
-@muladd function left(::WENOZ, u_m2, u_m1, u, u_p1, u_p2)
+@muladd @inline function left(::WENOZ, u_m2, u_m1, u, u_p1, u_p2)
     v1 = 3 // 8 * u_m2 - 10 // 8 * u_m1 + 15 // 8 * u
     v2 = -1 // 8 * u_m1 + 6 // 8 * u + 3 // 8 * u_p1
     v3 = 3 // 8 * u + 6 // 8 * u_p1 - 1 // 8 * u_p2
@@ -396,7 +396,7 @@ the smoothest substencil at a discontinuity. `dx` must be finite and positive.
 Unlike CWENO, WENO-Z exposes no `cell_polynomial`. The face and centre operators
 use different linear weights, so no single polynomial reproduces both.
 """
-@muladd function center(::WENOZ, u_m2::Number, u_m1::Number, u::Number,
+@muladd @inline function center(::WENOZ, u_m2::Number, u_m1::Number, u::Number,
     u_p1::Number, u_p2::Number; dx::Real)
 
     isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
@@ -438,31 +438,40 @@ end
     return (2 * u_m2 - 13 * u_m1 + 47 * u + 27 * u_p1 - 3 * u_p2) / 60
 end
 
-@muladd function left(lim::MP5, u_m2, u_m1, u, u_p1, u_p2)
+@inline @muladd function left(lim::MP5, u_m2, u_m1, u, u_p1, u_p2)
     α = lim.alpha
     tol = lim.tolerance
 
     u_face = mp5_polynomial(u_m2, u_m1, u, u_p1, u_p2)
     u_mp = u + minmod(u_p1 - u, α * (u - u_m1))
 
-    stencil_norm = sqrt(
-        u_m2 * u_m2 +
-        u_m1 * u_m1 +
-        u * u +
-        u_p1 * u_p1 +
-        u_p2 * u_p2,
-    )
-
-    if (u_face - u) * (u_face - u_mp) <= tol * stencil_norm
+    test = (u_face - u) * (u_face - u_mp)
+    # With nonnegative tolerance, an already admissible candidate needs no
+    # norm. Keep the expensive limiting path out of the small smooth-data path.
+    if test <= 0 && tol >= 0
         return u_face
     end
+    if !iszero(tol)
+        stencil_norm = sqrt(u_m2 * u_m2 + u_m1 * u_m1 + u * u + u_p1 * u_p1 + u_p2 * u_p2)
+        test <= tol * stencil_norm && return u_face
+    end
+    return _mp5_limit(α, u_face, u_m2, u_m1, u, u_p1, u_p2)
+end
 
+@inline @muladd function _mp5_curvature(a, b)
+    # Equivalent to minmod(4a-b, 4b-a, a, b). The extrema already contain
+    # the information needed to decide whether all four have the same sign.
+    lo, hi = min(4 * a - b, 4 * b - a, a, b), max(4 * a - b, 4 * b - a, a, b)
+    return ifelse(lo > 0, lo, ifelse(hi < 0, hi, zero(lo)))
+end
+
+@noinline @muladd function _mp5_limit(α, u_face, u_m2, u_m1, u, u_p1, u_p2)
     d_m = u_m2 - 2 * u_m1 + u
     d_0 = u_m1 - 2 * u + u_p1
     d_p = u - 2 * u_p1 + u_p2
 
-    dm_p = minmod(4 * d_0 - d_p, 4 * d_p - d_0, d_0, d_p)
-    dm_m = minmod(4 * d_0 - d_m, 4 * d_m - d_0, d_0, d_m)
+    dm_p = _mp5_curvature(d_0, d_p)
+    dm_m = _mp5_curvature(d_0, d_m)
 
     u_ul = u + α * (u - u_m1)
     u_av = 0.5 * (u + u_p1)
