@@ -291,7 +291,8 @@ julia --project=. benchmarks_faces.jl
 julia --project=. benchmarks_faces.jl /path/to/earlier/source
 ```
 
-This benchmark uses identical source-loading paths, constructs reconstruction
+Both benchmarks share source loading, periodic sampling, and timing helpers in
+`benchmarks/common.jl`. Each constructs reconstruction
 objects outside the loops, and measures smooth, mixed, and random rough data.
 MP5 receives cell averages; WENO-Z receives point values. The reported face
 sweep produces both states at every shared face.
@@ -325,7 +326,8 @@ points, and Float32 and zero-allocation checks. An additional 480 randomized com
 the optimized kernels against the dense matrix definition for both orders,
 input conventions, weight strategies, and Float32/Float64. Plotting additionally
 needs `Plots`; when it is
-unavailable, the plotting script still runs its smoke tests and skips figures.
+unavailable, the plotting script skips figures. Example sampling and periodic
+reconstruction smoke tests run in the package test suite.
 Additional regression checks compare MP5 with its original limiter on smooth,
 discontinuous, and random stencils, including nonzero tolerance and Float32/64.
 CWENO normalization is also compared with a BigFloat reference across extreme
@@ -338,5 +340,6 @@ CWENO3/CWENO5.
 They include face states and jumps for several profiles, plus center values and
 physical derivatives for a smooth sine wave.
 
-The original face API examples and timing demo remain available via
+The accuracy table and plots use the shared helpers in `examples/common.jl`.
+Run them together via
 `julia --project=. examples/reconstruction_demo.jl`.

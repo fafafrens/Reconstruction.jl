@@ -1,4 +1,22 @@
-# Included by runtests_reconstruction_limiters.jl.
+@testset "WENO-Z point interpolation accuracy" begin
+    # Symmetry makes tau5 zero for this cubic, exposing the optimal weights.
+    cubic = (-8.0, -1.0, 0.0, 1.0, 8.0)
+    @test left(WENOZ(), cubic...) ≈ 1 / 8 atol=1e-14
+    @test right(WENOZ(), cubic...) ≈ -1 / 8 atol=1e-14
+
+    # Check both face states converge at fifth order on smooth point data.
+    errors = map((0.2, 0.1, 0.05)) do dx
+        stencil = ntuple(k -> exp((k - 3) * dx), 6)
+        l, r = face(WENOZ(), stencil...)
+        (abs(l - exp(dx / 2)), abs(r - exp(dx / 2)))
+    end
+    for side in 1:2, level in 1:2
+        order = log2(errors[level][side] / errors[level + 1][side])
+        @test 4.7 < order < 5.3
+    end
+end
+
+# WENO face accuracy and center gradients.
 
 # Measured through a top-level wrapper, as the CWENO allocation tests do. An
 # inline @allocated over a splat inside a testset loop boxes on Julia 1.11 and

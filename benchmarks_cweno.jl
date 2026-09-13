@@ -1,29 +1,6 @@
 # Run: julia --project=. benchmarks_cweno.jl [earlier-source-directory]
 # The optional source directory allows comparison with an earlier checkout.
-if isempty(ARGS)
-    using Reconstruction
-else
-    source = only(ARGS)
-    entry = isfile(joinpath(source, "src", "Reconstruction.jl")) ?
-        joinpath(source, "src", "Reconstruction.jl") : joinpath(source, "Reconstruction.jl")
-    include(entry)
-    if isdefined(Main, :ReconstructionLimiters)
-        using .ReconstructionLimiters
-    else
-        using .Reconstruction
-    end
-end
-using Statistics
-using Printf
-
-# Keep repeated sweeps separate while allowing vectorization within each sweep.
-@noinline function direct_faces!(l, r, recon, u)
-    @inbounds for i in eachindex(l)
-        stencil = ntuple(k -> u[i + k - 1], Val(6))
-        l[i], r[i] = face(recon, stencil...)
-    end
-    return nothing
-end
+include("benchmarks/common.jl")
 
 @noinline function reuse_faces!(l, r, polynomials, recon, u)
     @inbounds for i in eachindex(l)
@@ -54,23 +31,11 @@ end
     return nothing
 end
 
-function measure_sweep(f; repetitions=30, samples=9)
-    f() # Compilation and all output allocation are excluded from timing.
-    times = map(1:samples) do _
-        (@elapsed for _ in 1:repetitions
-            f()
-        end) / repetitions
-    end
-    return (microseconds=1e6 * median(times), bytes=@allocated(f()))
-end
-
 function benchmark_cweno(; N=4096)
     @printf("%d periodic Float64 cells; median microseconds per complete face sweep\n", N)
     @printf("%-22s %12s %12s %12s %12s\n", "Profile / method", "WENO-Z", "CWENO-Z", "Reuse AoS", "Reuse SoA")
     for discontinuous in (false, true)
-        u = [sin(2π * (i - 3) / N) + 0.2cos(6π * (i - 3) / N) +
-            (discontinuous && 0.3 <= mod(i - 3, N) / N < 0.7 ? 1.0 : 0.0) for i in 1:(N + 5)]
-        u[(N + 1):(N + 5)] .= u[1:5]
+        u = periodic_samples(WENOZ(), "points", discontinuous ? "mixed" : "smooth", N)
         for power in (1, 2)
             recon = CWENO5(; input=PointValues(), weights=ZWeights(; power))
             l, r = zeros(N), zeros(N)

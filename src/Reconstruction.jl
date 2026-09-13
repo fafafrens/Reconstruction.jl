@@ -147,6 +147,20 @@ obtained by mirror symmetry from the same left-biased reconstruction.
 # Small helpers
 # ---------------------------------------------------------------------------
 
+@inline function _check_dx(dx::Real)
+    isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
+    return nothing
+end
+
+@inline _stencil_values(stencil, ::Val{N}, start) where {N} =
+    ntuple(j -> stencil[start + j - 1], Val(N))
+
+@inline function _centered_stencil(recon, stencil)
+    n = left_stencil_size(recon)
+    length(stencil) == n || throw(DimensionMismatch("expected $n centered stencil samples"))
+    return _stencil_values(stencil, Val(n), firstindex(stencil))
+end
+
 @inline _tiny(x::AbstractFloat) = eps(typeof(x))
 @inline _tiny(x) = eps()
 
@@ -253,6 +267,7 @@ end
 end
 
 include("CellPolynomials.jl")
+include("CWENO.jl")
 
 # ---------------------------------------------------------------------------
 # WENO3
@@ -309,7 +324,7 @@ the smoother one-sided increment at a discontinuity. `dx` must be finite and
 positive. As with WENO-Z, no `cell_polynomial` is exposed.
 """
 @muladd @inline function center(::WENO3, u_m::Number, u::Number, u_p::Number; dx::Real)
-    isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
+    _check_dx(dx)
 
     Δm, Δp, β0, β1, τ = _weno3_indicators(u_m, u, u_p)
 
@@ -327,11 +342,7 @@ end
 @inline center(recon::WENO3, stencil::NTuple{3,<:Number}; dx::Real) =
     center(recon, stencil...; dx)
 
-@inline function center(recon::WENO3, stencil::AbstractVector{<:Number}; dx::Real)
-    length(stencil) == 3 || throw(DimensionMismatch("expected 3 centered stencil samples"))
-    vals = ntuple(j -> stencil[firstindex(stencil) + j - 1], Val(3))
-    return center(recon, vals...; dx)
-end
+
 
 # ---------------------------------------------------------------------------
 # WENO-Z
@@ -399,7 +410,7 @@ use different linear weights, so no single polynomial reproduces both.
 @muladd @inline function center(::WENOZ, u_m2::Number, u_m1::Number, u::Number,
     u_p1::Number, u_p2::Number; dx::Real)
 
-    isfinite(dx) && dx > 0 || throw(ArgumentError("dx must be finite and positive"))
+    _check_dx(dx)
 
     # d/dξ at ξ = 0 of the quadratics through nodes (-2,-1,0), (-1,0,1), (0,1,2).
     g1 = 1 // 2 * u_m2 - 2 * u_m1 + 3 // 2 * u
@@ -424,11 +435,7 @@ end
 @inline center(recon::WENOZ, stencil::NTuple{5,<:Number}; dx::Real) =
     center(recon, stencil...; dx)
 
-@inline function center(recon::WENOZ, stencil::AbstractVector{<:Number}; dx::Real)
-    length(stencil) == 5 || throw(DimensionMismatch("expected 5 centered stencil samples"))
-    vals = ntuple(j -> stencil[firstindex(stencil) + j - 1], Val(5))
-    return center(recon, vals...; dx)
-end
+
 
 # ---------------------------------------------------------------------------
 # MP5
@@ -570,10 +577,27 @@ end
     stencil::AbstractVector{<:Number},
 ) where {H,N}
     length(stencil) == N || throw(BoundsError(stencil, 1:N))
-    vals = ntuple(j -> stencil[j], Val(N))
+    vals = _stencil_values(stencil, Val(N), 1)
     return face(recon, vals...)
 end
 
+
+const _PolynomialReconstruction = Union{Godunov,AbstractSlopeLimiter,CWENO3,CWENO5}
+
+@inline cell_polynomial(recon::_PolynomialReconstruction, stencil::Tuple{Vararg{Number}}) =
+    cell_polynomial(recon, stencil...)
+
+@inline function cell_polynomial(recon::_PolynomialReconstruction, stencil::AbstractVector{<:Number})
+    vals = _centered_stencil(recon, stencil)
+    return cell_polynomial(recon, vals...)
+end
+
+@inline center(recon::_PolynomialReconstruction, stencil...; dx::Real) =
+    center(cell_polynomial(recon, stencil...); dx)
+
+@inline function center(recon::Union{WENO3,WENOZ}, stencil::AbstractVector{<:Number}; dx::Real)
+    return center(recon, _centered_stencil(recon, stencil)...; dx)
+end
 
 const reconstruct = face
 const reconstruct! = face!

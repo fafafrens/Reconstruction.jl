@@ -1,6 +1,4 @@
-# Included by runtests_reconstruction_limiters.jl.
-const RL = Reconstruction
-const CWENO_WEIGHT_STRATEGIES = (JSWeights(), ZWeights(), ZWeights(; power=1))
+# Polynomial reconstruction tests; common fixtures are defined in runtests.jl.
 
 # Four-point Gauss quadrature on [-1/2, 1/2], exact through degree seven.
 const GAUSS_NODES = (
@@ -261,6 +259,3 @@ polynomial_allocations(recon, u) = @allocated cell_polynomial(recon, u...)
         @test polynomial_allocations(recon, u) == 0
     end
 end
-
-include(joinpath(@__DIR__, "runtests_cweno_z.jl"))
-include(joinpath(@__DIR__, "runtests_cweno_reference.jl"))
