@@ -13,6 +13,7 @@ const RECONSTRUCTIONS = (
     CWENO5(),
     CWENO5(; input=PointValues()),
     MP5(),
+    PPM(),
     MinmodLimiter(),
     GeneralizedMinmodLimiter(),
     VanLeerLimiter(),
@@ -23,7 +24,7 @@ const RECONSTRUCTIONS = (
 
 const PLOT_RECONS = filter(r -> !(r isa Union{GeneralizedMinmodLimiter,VanAlbadaLimiter,MonotonizedCentralLimiter}), RECONSTRUCTIONS)
 
-has_center(recon) = recon isa Union{Godunov,AbstractSlopeLimiter,WENO3,WENOZ,CWENO3,CWENO5}
+has_center(recon) = recon isa Union{Godunov,AbstractSlopeLimiter,WENO3,WENOZ,CWENO3,CWENO5,PPM}
 
 recon_label(recon) = string(nameof(typeof(recon)))
 recon_label(::MP5) = "MP5"
@@ -42,7 +43,7 @@ const PROFILES = (
 )
 
 function sample_profile(recon, f, primitive, N)
-    averages = recon isa Union{Godunov,AbstractSlopeLimiter,MP5} ||
+    averages = recon isa Union{Godunov,AbstractSlopeLimiter,MP5,PPM} ||
         (recon isa Union{CWENO3,CWENO5} && recon.input isa CellAverages)
     return averages ? [N * (primitive(i / N) - primitive((i - 1) / N)) for i in 1:N] :
         [f((i - 0.5) / N) for i in 1:N]

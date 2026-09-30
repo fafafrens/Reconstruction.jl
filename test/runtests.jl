@@ -18,6 +18,7 @@ const RECONS = (
     CWENO5(; weights=ZWeights()),
     CWENO5(; weights=ZWeights(), input=PointValues()),
     MP5(),
+    PPM(),
     MinmodLimiter(),
     GeneralizedMinmodLimiter(),
     VanLeerLimiter(),
@@ -28,6 +29,7 @@ const RECONS = (
 
 include("runtests_interfaces.jl")
 include("runtests_cell_polynomials.jl")
+include("runtests_ppm.jl")
 include("runtests_cweno_z.jl")
 include("runtests_cweno_reference.jl")
 include("runtests_weno.jl")

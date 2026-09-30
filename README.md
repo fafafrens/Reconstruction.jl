@@ -22,6 +22,7 @@ available. The stencil is ordered from left to right.
 | Slope limiters | Point values or cell averages | 4 / 2 |
 | WENO3, WENOZ | Point values | 4 / 2, 6 / 3 |
 | MP5 | Cell averages for state reconstruction | 6 / 3 |
+| PPM | Cell averages | 6 / 3 |
 | CWENO3 | Explicit `PointValues()` or `CellAverages()` | 4 / 2 |
 | CWENO5 | Explicit `PointValues()` or `CellAverages()` | 6 / 3 |
 
@@ -32,7 +33,7 @@ values. WENOZ's corrected optimal point-interpolation weights are
 
 ## Reusable cell polynomials
 
-Godunov, the slope limiters, CWENO3, and CWENO5 can return a `CellPolynomial`. Its
+Godunov, the slope limiters, PPM, CWENO3, and CWENO5 can return a `CellPolynomial`. Its
 coefficients are an immutable tuple in ascending powers of the dimensionless
 coordinate `ξ = (x - x_i)/dx`, with cell boundaries at `ξ = ±1/2`.
 
@@ -99,6 +100,34 @@ The linear coefficient is the existing limited `slope`, an increment across
 one cell. Dividing it by `dx` gives the physical derivative. WENO3, WENOZ, and
 MP5 retain their face interfaces and expose no cell polynomial. WENO3 and WENOZ
 do provide a `center` reconstruction, described below; MP5 provides neither.
+
+## PPM reconstruction
+
+`PPM()` constructs a conservative quadratic from five cell averages. It uses
+the classic limited-slope interface interpolation and parabolic monotonicity
+constraints, described in [Sekora and Colella, sections 1.2 and 1.4](https://arxiv.org/abs/0903.4200).
+
+```julia
+recon = PPM()
+p = cell_polynomial(recon, 0.2, 0.4, 0.8, 1.3, 1.9)
+uc, dudx = center(p; dx=0.1)
+ul, ur = face(recon, 0.2, 0.4, 0.8, 1.3, 1.9, 2.6)
+```
+
+The polynomial preserves the central cell average and is monotone within the
+cell after limiting. The center is a reconstructed point value, not generally
+the average. Tuple, vector, mirrored `right`, and array face interfaces work
+as for CWENO. Five samples are needed for a cell polynomial and six for a face;
+reconstructing all physical faces needs three ghost cells per side.
+
+Away from extrema, inactive limiting gives third-order interior values,
+fourth-order face values, and second-order first derivatives. Classic PPM
+flattens extrema, including smooth ones, so these orders are not global
+guarantees. This implementation provides spatial reconstruction only; it does
+not include characteristic tracing, shock flattening, or contact steepening.
+
+PPM participates in the face and complete-update benchmarks; see the
+[PPM timing comparison](benchmarks/ppm_results.md).
 
 ## WENO centre gradients
 
@@ -311,6 +340,33 @@ cost, so their near-parity with CWENO-Z does not apply to the current methods.
 These compare runtime with each method's existing input convention and defaults,
 not identical error levels.
 
+## Complete-update benchmarks
+
+```sh
+julia --startup-file=no --project=. benchmarks_updates.jl
+```
+
+This compares direct face calls, rolling polynomial reuse, face accumulation,
+and batched boundary evaluation through a complete periodic scalar Burgers
+update. It includes Godunov, all six slope limiters, MP5, PPM, WENO3/WENOZ, and
+CWENO3/CWENO5 with JS and Z weights. Smooth, mixed and rough data use each
+method's input convention; point-input timings compare work rather than a
+cell-average discretization. Polynomial paths are omitted for MP5 and WENO.
+
+Both reconstruction and flux evaluation are timed. Setup, scratch allocation,
+compilation and halo filling are excluded. Each variant is checked against an
+independent periodic reference, including conservation and boundary wraparound.
+The optional center column measures old-state values and derivatives together
+with the rolling polynomial update.
+
+On the measured Apple M2, smooth cell-average CWENO-Z5 took 64.8 µs with stored
+fluxes, 71.4 µs with direct rolling faces, 84.9 µs with rolling polynomials, and
+34.3 µs with batched polynomial boundaries, per 4096-cell update. The batched
+method retains two face-state arrays and one flux array; the rolling methods
+use no flux array. All allocate zero bytes during the sweep. These are local
+measurements, not a guarantee for other fluxes or machines.
+See [the complete results and column definitions](benchmarks/updates_results.md).
+
 ## Validation and plots
 
 ```sh
@@ -334,7 +390,7 @@ CWENO normalization is also compared with a BigFloat reference across extreme
 scales. Allocation-free MP5 sweeps are checked for Float64; its existing mixed
 Float32/Float64 branch arithmetic remains unchanged.
 
-Diagnostics use exact cell averages for Godunov, slope limiters, MP5, and
+Diagnostics use exact cell averages for Godunov, slope limiters, MP5, PPM, and
 cell-average CWENO3/CWENO5, and point samples for WENO3, WENOZ, and point-value
 CWENO3/CWENO5.
 They include face states and jumps for several profiles, plus center values and

@@ -21,6 +21,7 @@ export AbstractReconstruction,
        derivative,
        center,
        MP5,
+       PPM,
        MinmodLimiter,
        GeneralizedMinmodLimiter,
        VanLeerLimiter,
@@ -267,6 +268,7 @@ end
 end
 
 include("CellPolynomials.jl")
+include("PPM.jl")
 include("CWENO.jl")
 
 # ---------------------------------------------------------------------------
@@ -582,7 +584,7 @@ end
 end
 
 
-const _PolynomialReconstruction = Union{Godunov,AbstractSlopeLimiter,CWENO3,CWENO5}
+const _PolynomialReconstruction = Union{Godunov,AbstractSlopeLimiter,CWENO3,CWENO5,PPM}
 
 @inline cell_polynomial(recon::_PolynomialReconstruction, stencil::Tuple{Vararg{Number}}) =
     cell_polynomial(recon, stencil...)

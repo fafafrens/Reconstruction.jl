@@ -42,7 +42,7 @@ end
 
 Return `(value=uc, derivative=dudx)` at the cell center. Supported reconstruction
 methods are Godunov (one sample), the slope limiters and CWENO3 (three samples),
-and CWENO5 (five samples). WENO3 and WENOZ also implement `center` directly.
+and CWENO5 and PPM (five samples). WENO3 and WENOZ also implement `center` directly.
 `dx` is the physical cell width.
 """
 @inline center(p::CellPolynomial; dx::Real) =
@@ -63,11 +63,11 @@ Each polynomial uses its own cell-centered local coordinate.
     cell_polynomial(recon, stencil::AbstractVector)
 
 Build a polynomial centered on the middle stencil sample. Godunov needs one
-sample, slope limiters and CWENO3 three, and CWENO5 five. The polynomial can be reused for
+sample, slope limiters and CWENO3 three, and CWENO5 and PPM five. The polynomial can be reused for
 both cell boundaries, interior values, and physical derivatives.
 
 Godunov and slope limiters preserve the central sample both as a point value
-and as a cell average. CWENO3 and CWENO5 use their explicit `input` convention. Existing
+and as a cell average. PPM requires cell averages. CWENO3 and CWENO5 use their explicit `input` convention. Existing
 WENO3 and WENOZ provide faces and centers without a cell polynomial; MP5 provides faces only.
 """
 @inline cell_polynomial(::Godunov, u::Number) = CellPolynomial((u,))

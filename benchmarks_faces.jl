@@ -22,6 +22,7 @@ function main()
         ("CWENO-Z5 p2", CWENO5(; input=CellAverages(), weights=ZWeights()), "averages"),
         ("CWENO-Z3 p2", CWENO3(; input=PointValues(), weights=ZWeights()), "points"),
         ("MP5 tol=0", MP5(), "averages"),
+        ("PPM", PPM(), "averages"),
         ("MP5 tol=1e-12", MP5(; tolerance=1e-12), "averages"),
     )
     for profile in ("smooth", "mixed", "rough"), (label, recon, input) in cases
